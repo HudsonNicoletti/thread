@@ -192,7 +192,7 @@ final class NotchPanelController {
             panel.orderOut(nil)
             return
         }
-        let width: CGFloat = reminder == nil ? 150 : 330
+        let width: CGFloat = reminder == nil ? 220 : 360
         panel.setContentSize(NSSize(width: width, height: reminder == nil ? 30 : 42))
         position()
         panel.orderFrontRegardless()
@@ -202,8 +202,10 @@ final class NotchPanelController {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         let frame = screen.frame
         let x = frame.midX - panel.frame.width / 2
-        // ponytail: public APIs do not expose the physical notch rectangle; this top-center offset is the calibration point.
-        let y = frame.maxY - panel.frame.height - max(2, screen.safeAreaInsets.top > 0 ? 0 : 4)
+        let notchDepth = screen.safeAreaInsets.top
+        // ponytail: public APIs expose notch depth, not its exact width; overlap one point so this reads as an extension, never content hidden behind hardware.
+        let visibleTop = notchDepth > 0 ? frame.maxY - notchDepth + 1 : frame.maxY - 4
+        let y = visibleTop - panel.frame.height
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 }
@@ -224,7 +226,11 @@ struct NotchIndicator: View {
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(UnevenRoundedRectangle(
+            bottomLeadingRadius: 12,
+            bottomTrailingRadius: 12,
+            style: .continuous
+        ))
         .accessibilityLabel(store.indicatorTitle)
     }
 }
