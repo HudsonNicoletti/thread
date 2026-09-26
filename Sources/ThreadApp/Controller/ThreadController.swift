@@ -10,6 +10,7 @@ final class ThreadController: ObservableObject {
     @Published var draft = ""
     @Published var note = ""
     @Published var reminderText: String?
+    @Published var indicatorHovered = false
 
     private struct State: Codable {
         var active: WorkThread?
