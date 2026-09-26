@@ -19,3 +19,10 @@ open .build/Thread.app
 Requires macOS 14 or newer.
 
 Thread has no Dock app or standalone window. It uses only public macOS APIs and stores state locally in UserDefaults. Resuming launches captured apps and opens recent local documents that still exist.
+
+## Structure
+
+- `Model/` — thread and captured-context data
+- `Controller/` — state, persistence, context restoration, and notch panel control
+- `View/` — menu-bar and notch SwiftUI views
+- `ThreadApp.swift` — application composition
