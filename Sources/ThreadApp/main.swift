@@ -193,7 +193,9 @@ final class NotchPanelController {
             return
         }
         let width: CGFloat = reminder == nil ? 220 : 360
-        panel.setContentSize(NSSize(width: width, height: reminder == nil ? 30 : 42))
+        let visibleHeight: CGFloat = reminder == nil ? 32 : 46
+        let notchDepth = (NSScreen.main ?? NSScreen.screens.first)?.safeAreaInsets.top ?? 0
+        panel.setContentSize(NSSize(width: width, height: notchDepth + visibleHeight))
         position()
         panel.orderFrontRegardless()
     }
@@ -202,10 +204,8 @@ final class NotchPanelController {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         let frame = screen.frame
         let x = frame.midX - panel.frame.width / 2
-        let notchDepth = screen.safeAreaInsets.top
-        // ponytail: public APIs expose notch depth, not its exact width; overlap one point so this reads as an extension, never content hidden behind hardware.
-        let visibleTop = notchDepth > 0 ? frame.maxY - notchDepth + 1 : frame.maxY - 4
-        let y = visibleTop - panel.frame.height
+        // ponytail: the black background may sit behind the hardware; controls never do. Starting at screen top removes the menu-bar seam.
+        let y = frame.maxY - panel.frame.height
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 }
@@ -214,16 +214,20 @@ struct NotchIndicator: View {
     @ObservedObject var store: ThreadStore
 
     var body: some View {
-        HStack(spacing: 7) {
-            Circle()
-                .fill(Color.cyan)
-                .frame(width: 6, height: 6)
-            Text(store.indicatorTitle)
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
+        VStack(spacing: 0) {
+            Color.clear.frame(height: (NSScreen.main ?? NSScreen.screens.first)?.safeAreaInsets.top ?? 0)
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(Color.cyan)
+                    .frame(width: 7, height: 7)
+                Text(store.indicatorTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
         .clipShape(UnevenRoundedRectangle(
@@ -240,46 +244,57 @@ struct ThreadView: View {
     @FocusState private var focusDraft: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Thread").font(.largeTitle.bold())
-                Text("Remember what you were doing before the world interrupted you.")
-                    .foregroundStyle(.secondary)
-            }
-
-            if let active = store.active {
-                activeCard(active)
-            } else {
-                newThreadForm
-            }
-
-            if !store.parked.isEmpty {
-                section("Parked") {
-                    ForEach(store.parked) { thread in
-                        threadRow(thread, action: "Resume") { store.resume(thread) }
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Thread").font(.title.bold())
+                        Text("Remember what you were doing.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
-                }
-            }
 
-            if !store.completed.isEmpty {
-                section("Done") {
-                    ForEach(store.completed.prefix(5)) { thread in
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                            Text(thread.intention).lineLimit(1)
-                            Spacer()
-                            if let date = thread.finishedAt {
-                                Text(date, style: .relative).font(.caption).foregroundStyle(.secondary)
+                    if let active = store.active {
+                        activeCard(active)
+                    } else {
+                        newThreadForm
+                    }
+
+                    if !store.parked.isEmpty {
+                        section("Parked") {
+                            ForEach(store.parked) { thread in
+                                threadRow(thread, action: "Resume") { store.resume(thread) }
+                            }
+                        }
+                    }
+
+                    if !store.completed.isEmpty {
+                        section("Done") {
+                            ForEach(store.completed.prefix(5)) { thread in
+                                HStack {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                    Text(thread.intention).lineLimit(1)
+                                    Spacer()
+                                    if let date = thread.finishedAt {
+                                        Text(date, style: .relative).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
                             }
                         }
                     }
                 }
+                .padding(18)
             }
-            Spacer(minLength: 0)
+            Divider()
+            HStack {
+                Text("Local only").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Quit Thread") { NSApp.terminate(nil) }
+                    .buttonStyle(.borderless)
+            }
+            .padding(12)
         }
-        .padding(24)
-        .frame(minWidth: 520, minHeight: 460)
-        .onReceive(NotificationCenter.default.publisher(for: .focusNewThread)) { _ in focusDraft = true }
+        .frame(width: 380, height: 520)
     }
 
     private var newThreadForm: some View {
@@ -305,7 +320,7 @@ struct ThreadView: View {
             Text(thread.intention).font(.title2.weight(.semibold))
             if !thread.note.isEmpty { Text(thread.note).foregroundStyle(.secondary) }
             HStack {
-                Button("Park", action: store.park)
+                Button("Park & New", action: store.park)
                 Button("Complete", action: store.complete).buttonStyle(.borderedProminent)
             }
         }
@@ -340,10 +355,6 @@ struct ThreadView: View {
     }
 }
 
-extension Notification.Name {
-    static let focusNewThread = Notification.Name("focusNewThread")
-}
-
 @main
 struct ThreadApp: App {
     @StateObject private var store: ThreadStore
@@ -353,47 +364,13 @@ struct ThreadApp: App {
         let store = ThreadStore()
         _store = StateObject(wrappedValue: store)
         panelController = NotchPanelController(store: store)
+        NSApp.setActivationPolicy(.accessory)
     }
 
     var body: some Scene {
-        WindowGroup {
+        MenuBarExtra("Thread", systemImage: store.active == nil ? "circle" : "circle.dotted") {
             ThreadView(store: store)
         }
-        .windowStyle(.hiddenTitleBar)
-        .commands {
-            CommandMenu("Thread") {
-                Button("New Thread") {
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.windows.first { $0.canBecomeKey }?.makeKeyAndOrderFront(nil)
-                    NotificationCenter.default.post(name: .focusNewThread, object: nil)
-                }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
-
-                Button("Park Current Thread", action: store.park)
-                    .keyboardShortcut("p", modifiers: [.command, .shift])
-                    .disabled(store.active == nil)
-
-                Button("Complete Current Thread", action: store.complete)
-                    .keyboardShortcut(.return, modifiers: [.command, .shift])
-                    .disabled(store.active == nil)
-            }
-        }
-
-        MenuBarExtra("Thread", systemImage: store.active == nil ? "circle" : "circle.dotted") {
-            if let active = store.active {
-                Text(active.intention)
-                Divider()
-                Button("Park", action: store.park)
-                Button("Complete", action: store.complete)
-            } else {
-                Text("No active thread")
-            }
-            Divider()
-            Button("Open Thread") {
-                NSApp.activate(ignoringOtherApps: true)
-                NSApp.windows.first { $0.canBecomeKey }?.makeKeyAndOrderFront(nil)
-            }
-            Button("Quit") { NSApp.terminate(nil) }
-        }
+        .menuBarExtraStyle(.window)
     }
 }
